@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import AdminList, { cardStyles as c, Header, Pill } from '../../components/AdminList';
-import { useAuth } from '../../hooks/useAuth';
-import { can } from '../../services/permissions';
-import type { Session, Visit } from '../../types';
+import { router } from 'expo-router';
+import AdminList, { cardStyles as c, Header, Pill } from '../../../components/AdminList';
+import SessionsList from '../../../components/SessionsList';
+import { useAuth } from '../../../hooks/useAuth';
+import { when } from '../../../services/format';
+import { can } from '../../../services/permissions';
+import type { Visit } from '../../../types';
 
-const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '—');
-const dur = (s: number) => `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
-
-type Sess = Session & { display_name: string; employee_id?: string; visits_count?: number };
 type AVisit = Visit & { display_name?: string; employee_name?: string };
 
 export default function Attendance() {
@@ -32,35 +31,21 @@ export default function Attendance() {
   );
 
   return tab === 'sessions' ? (
-    <AdminList<Sess>
-      url="/admin/sessions/"
-      header={toggle}
-      renderItem={(s) => (
-        <>
-          <View style={c.row}>
-            <Text style={c.name}>{s.display_name}</Text>
-            <Pill text={s.status} color={s.status === 'ACTIVE' ? '#16a34a' : '#64748b'} bg={s.status === 'ACTIVE' ? '#ecfdf5' : '#f1f5f9'} />
-          </View>
-          <Text style={c.meta}>In: {fmt(s.punch_in_at)}</Text>
-          <Text style={c.meta}>Out: {fmt(s.punch_out_at)} · {dur(s.duration_seconds)}</Text>
-          <Text style={c.meta}>Tracking: {s.tracking_status} · {s.visits_count ?? 0} visits</Text>
-        </>
-      )}
-    />
+    <SessionsList header={toggle} />
   ) : (
     <AdminList<AVisit>
       url="/admin/visits/"
       header={toggle}
       renderItem={(v) => (
-        <>
+        <TouchableOpacity onPress={() => router.push(`/visit/${v.id}` as never)} accessibilityRole="button">
           <View style={c.row}>
             <Text style={c.name}>{v.site_name}</Text>
             <Pill text={v.status} />
           </View>
           <Text style={c.meta}>{v.display_name ?? v.employee_name ?? ''}</Text>
-          <Text style={c.meta}>{v.location_name} · {fmt(v.start_time)}</Text>
+          <Text style={c.meta}>{v.location_name} · {when(v.start_time)}</Text>
           {v.outcome ? <Text style={c.meta}>Outcome: {v.outcome}</Text> : null}
-        </>
+        </TouchableOpacity>
       )}
     />
   );

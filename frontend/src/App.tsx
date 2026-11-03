@@ -7,6 +7,8 @@ import { useAuth } from './hooks/useAuth';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import { AdminProfilePage, DepartmentsPage, SecurityPage } from './pages/admin/AdminSettingsPages';
+import ReportsPage from './pages/admin/ReportsPage';
 import UserDetailsPage from './pages/admin/UserDetailsPage';
 import { AdminChangePasswordPage, ChangePasswordPage, RolesPage, UsersPage } from './pages/admin/UserManagementPages';
 import { SETUP_PAGES } from './pages/admin/setup/masterConfigs';
@@ -52,6 +54,10 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/" element={<RequireRole role="USER"><UserDashboard /></RequireRole>} />
       <Route path="/admin" element={<RequireRole role={PORTAL}><AdminHome /></RequireRole>} />
+      <Route path="/admin/reports" element={<RequireRole role={PORTAL} screen="reports"><ReportsPage /></RequireRole>} />
+      <Route path="/admin/profile" element={<RequireRole role={PORTAL}><AdminProfilePage /></RequireRole>} />
+      <Route path="/admin/departments" element={<RequireRole role="ADMIN"><DepartmentsPage /></RequireRole>} />
+      <Route path="/admin/security" element={<RequireRole role="ADMIN"><SecurityPage /></RequireRole>} />
       <Route path="/admin/:tab" element={<RequireRole role={PORTAL}><AdminDashboard /></RequireRole>} />
       <Route path="/admin/users/:id" element={<RequireRole role={PORTAL} screen="user_management.user"><UserDetailsPage /></RequireRole>} />
       {Object.entries(SETUP_PAGES).map(([slug, config]) => (

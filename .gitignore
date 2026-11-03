@@ -5,3 +5,5 @@ dist/
 .env.local
 .DS_Store
 *.log
+# Added by code-review-graph
+.code-review-graph/

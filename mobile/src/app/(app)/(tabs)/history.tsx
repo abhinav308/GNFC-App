@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import api, { errorMessage, unwrapList } from '../../services/api';
-import type { Session } from '../../types';
+import { useT } from '../../../i18n';
+import api, { errorMessage, unwrapList } from '../../../services/api';
+import type { Session } from '../../../types';
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -11,6 +12,7 @@ function formatDuration(seconds: number) {
 }
 
 export default function HistoryScreen() {
+  const { t } = useT();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,12 +52,12 @@ export default function HistoryScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
     >
-      <Text style={styles.title}>Attendance History</Text>
+      <Text style={styles.title}>{t('historyTitle')}</Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {sessions.length === 0 ? (
-        <Text style={styles.empty}>No past sessions yet.</Text>
+        <Text style={styles.empty}>{t('noSessions')}</Text>
       ) : (
         sessions.map((s) => {
           const date = new Date(s.punch_in_at);
@@ -71,11 +73,11 @@ export default function HistoryScreen() {
                 </View>
               </View>
               <Text style={styles.row}>
-                In: {date.toLocaleTimeString()}
-                {s.punch_out_at ? `   Out: ${new Date(s.punch_out_at).toLocaleTimeString()}` : ''}
+                {t('inLabel')}: {date.toLocaleTimeString()}
+                {s.punch_out_at ? `   ${t('outLabel')}: ${new Date(s.punch_out_at).toLocaleTimeString()}` : ''}
               </Text>
-              <Text style={styles.row}>Duration: {formatDuration(s.duration_seconds)}</Text>
-              <Text style={styles.sub}>Tracking: {s.tracking_status}</Text>
+              <Text style={styles.row}>{t('durationLabel')}: {formatDuration(s.duration_seconds)}</Text>
+              <Text style={styles.sub}>{t('trackingLabel')}: {s.tracking_status}</Text>
             </View>
           );
         })

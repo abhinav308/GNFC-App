@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,59 +11,38 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
+import { Lang, setLang, useT } from '../i18n';
 import { errorMessage } from '../services/api';
 
-const BLUE = '#0088ff';
-
-type LoginRole = 'staff' | 'admin' | 'manager';
-const ROLES: LoginRole[] = ['staff', 'admin', 'manager'];
-const COPY: Record<LoginRole, { label: string; eyebrow: string; heading: string; helper: string; expected: string }> = {
-  staff: {
-    label: 'Staff Login',
-    eyebrow: 'Staff access',
-    heading: 'Welcome, Field Officer',
-    helper: 'Sign in to manage attendance, field visits, and tracking.',
-    expected: 'USER',
-  },
-  admin: {
-    label: 'Admin Login',
-    eyebrow: 'Administrator access',
-    heading: 'Welcome, Administrator',
-    helper: 'Sign in to manage operations, users, and reports.',
-    expected: 'ADMIN',
-  },
-  manager: {
-    label: 'Manager Login',
-    eyebrow: 'Manager access',
-    heading: 'Welcome, Manager',
-    helper: 'Sign in to review the areas assigned to your role.',
-    expected: 'MANAGER',
-  },
-};
-const ICON: Record<LoginRole, string> = { staff: '👤', admin: '🛡️', manager: '👥' };
+const NAVY = '#0a192f';
+const GREEN = '#00c696';
+const LANGS: [Lang, string][] = [['en', 'English'], ['hi', 'हिंदी'], ['gu', 'ગુજરાતી']];
 
 export default function LoginScreen() {
-  const { login, logout } = useAuth();
-  const [role, setRole] = useState<LoginRole>('staff');
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { login } = useAuth();
+  const { t, lang } = useT();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // While a box is focused the keyboard is open: hide the big title so the form fits above the keyboard.
+  const [typing, setTyping] = useState(false);
+  const blurTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const onFocus = () => {
+    clearTimeout(blurTimer.current);
+    setTyping(true);
+  };
+  const onBlur = () => {
+    blurTimer.current = setTimeout(() => setTyping(false), 200); // moving between the two boxes should not flicker
+  };
 
-  const copy = COPY[role];
-
-  const signIn = async (id: string, pass: string, expected = copy.expected) => {
+  // The account's own role decides which part of the app opens (the root layout routes by role).
+  const signIn = async (id: string, pass: string) => {
     setBusy(true);
     setError('');
     try {
-      const u = await login(id, pass);
-      if (u.role !== expected) {
-        logout();
-        throw new Error(`This account is not valid for ${copy.label}.`);
-      }
-      // Root layout guards route staff to (app) and admin/manager to (admin).
+      await login(id, pass);
     } catch (err) {
       setError(errorMessage(err) || 'Authentication failed. Please verify your credentials.');
     } finally {
@@ -77,162 +55,155 @@ export default function LoginScreen() {
   };
 
   return (
-    <ImageBackground source={require('../../assets/ncode_bg.jpg')} style={styles.screen} resizeMode="cover">
-      <View style={styles.overlay} />
-      <View style={styles.switcher}>
-        <TouchableOpacity style={styles.switchBtn} onPress={() => setMenuOpen(!menuOpen)} accessibilityLabel="Choose login portal">
-          <Text style={{ fontSize: 20 }}>{ICON[role]}</Text>
-        </TouchableOpacity>
-        {menuOpen && (
-          <View style={styles.menu}>
-            {ROLES.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.menuItem, role === r && { backgroundColor: BLUE }]}
-                onPress={() => {
-                  setRole(r);
-                  setMenuOpen(false);
-                  setError('');
-                }}
-              >
-                <Text style={{ fontSize: 16 }}>{ICON[r]}</Text>
-                <Text style={{ fontWeight: '600', color: role === r ? '#fff' : '#475569' }}>{COPY[r].label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
+    <View style={s.screen}>
+      <View style={s.glow} pointerEvents="none" />
+      <View style={s.ring} pointerEvents="none" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.logoBox}>
-            <Text style={styles.logoN}>(n)</Text>
-            <View>
-              <Text style={styles.logoText}>Code<Text style={styles.reg}>®</Text></Text>
-              <Text style={styles.logoSub}>SOLUTIONS</Text>
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View style={[s.hero, typing && s.heroTyping]}>
+            <View style={s.topRow}>
+              <View style={s.brand}>
+                <View style={s.mark}>
+                  <Text style={s.markText}>n</Text>
+                </View>
+                <Text style={s.brandText}>Code Solutions</Text>
+              </View>
+              <View style={s.langs}>
+                {LANGS.map(([code, label]) => (
+                  <TouchableOpacity key={code} style={[s.lang, lang === code && s.langOn]} onPress={() => setLang(code)} accessibilityRole="button">
+                    <Text style={[s.langText, lang === code && { color: NAVY }]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
+
+            {typing ? null : (
+              <>
+                <Text style={s.title}>Field Force</Text>
+                <View style={s.route} accessibilityElementsHidden>
+                  <View style={s.dot} />
+                  <View style={s.line} />
+                  <View style={s.dot} />
+                  <View style={s.line} />
+                  <Text style={s.pin}>📍</Text>
+                </View>
+                <Text style={s.lead}>{t('loginLead')}</Text>
+              </>
+            )}
           </View>
-          <Text style={styles.h1}>Field Force Platform</Text>
-          <Text style={styles.lead}>
-            Enterprise management for live attendance, tracking, and remote field operations.
-          </Text>
 
-          <View style={styles.card}>
-            <Text style={styles.eyebrow}>{copy.eyebrow}</Text>
-            <Text style={styles.title}>{copy.heading}</Text>
-            <Text style={styles.subtitle}>{copy.helper}</Text>
+          <View style={[s.sheet, typing && s.sheetTyping]}>
+            <Text style={s.sheetTitle}>{t('loginTitle')}</Text>
+            <Text style={s.sheetSub}>{t('loginSub')}</Text>
 
-            <Text style={styles.label}>Enter your username</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Login ID"
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={identifier}
-              onChangeText={setIdentifier}
-            />
-
-            <Text style={styles.label}>Enter your Password</Text>
-            <View>
+            <View style={s.field}>
+              <Text style={s.fieldIcon}>👤</Text>
               <TextInput
-                style={[styles.input, { paddingRight: 56 }]}
-                placeholder="Enter Password"
+                style={s.input}
+                placeholder={t('phId')}
+                accessibilityLabel={t('loginFieldId')}
+                placeholderTextColor="#94a3b8"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={identifier}
+                onChangeText={setIdentifier}
+                returnKeyType="next"
+                onFocus={onFocus}
+                onBlur={onBlur}
+              />
+            </View>
+
+            <View style={s.field}>
+              <Text style={s.fieldIcon}>🔒</Text>
+              <TextInput
+                style={s.input}
+                placeholder={t('phPw')}
+                accessibilityLabel={t('loginFieldPw')}
                 placeholderTextColor="#94a3b8"
                 secureTextEntry={!showPassword}
+                autoCapitalize="none"
                 value={password}
                 onChangeText={setPassword}
+                onSubmitEditing={submit}
+                returnKeyType="go"
+                onFocus={onFocus}
+                onBlur={onBlur}
               />
-              <TouchableOpacity style={styles.show} onPress={() => setShowPassword(!showPassword)}>
-                <Text style={styles.showText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} accessibilityRole="button">
+                <Text style={s.show}>{showPassword ? t('hide') : t('show')}</Text>
               </TouchableOpacity>
             </View>
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={s.error}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.button} onPress={submit} disabled={busy}>
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.reset}
-              onPress={() => {
-                setIdentifier('');
-                setPassword('');
-                setError('');
-              }}
-            >
-              <Text style={styles.resetText}>Reset</Text>
+            <TouchableOpacity style={[s.button, busy && { opacity: 0.7 }]} onPress={submit} disabled={busy} accessibilityRole="button">
+              {busy ? <ActivityIndicator color={NAVY} /> : <Text style={s.buttonText}>{t('loginBtn')}</Text>}
             </TouchableOpacity>
 
             {/* Demo shortcuts: development only, hidden in release builds */}
-            {__DEV__ && role === 'staff' && (
-              <>
-                <View style={styles.divider} />
-                {(
-                  [
-                    ['Admin Portal', 'admin@honey.com', '123456', 'ADMIN'],
-                    ['Field Officer Portal', 'staff@honey.com', '123456', 'USER'],
-                    ['Manager Portal', 'manager@honey.com', '123456', 'MANAGER'],
-                  ] as const
-                ).map(([label, id, pass, exp]) => (
-                  <TouchableOpacity key={id} style={styles.direct} onPress={() => signIn(id, pass, exp)} disabled={busy}>
-                    <Text style={styles.buttonText}>Direct Login ({label})</Text>
-                  </TouchableOpacity>
-                ))}
-              </>
+            {__DEV__ && (
+              <View style={s.devWrap}>
+                <Text style={s.devLabel}>Dev shortcuts</Text>
+                <View style={s.devRow}>
+                  {(
+                    [
+                      ['Admin', 'admin@honey.com', '123456'],
+                      ['Staff', 'staff@honey.com', '123456'],
+                      ['Manager', 'manager@honey.com', '123456'],
+                    ] as const
+                  ).map(([label, id, pass]) => (
+                    <TouchableOpacity key={id} style={s.devBtn} onPress={() => signIn(id, pass)} disabled={busy}>
+                      <Text style={s.devText}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </ImageBackground>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#0a192f' },
-  overlay: { ...StyleSheet.absoluteFill as object, backgroundColor: 'rgba(15,23,42,0.6)' },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingTop: 60 },
-  logoBox: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 4,
-    marginBottom: 24,
-    gap: 6,
-  },
-  logoN: { color: '#0088cc', fontWeight: '700', fontSize: 16, borderWidth: 2, borderColor: '#0088cc', borderRadius: 20, paddingHorizontal: 6 },
-  logoText: { color: '#0088cc', fontWeight: '700', fontSize: 22 },
-  reg: { fontSize: 9 },
-  logoSub: { color: '#94a3b8', fontSize: 9, letterSpacing: 1 },
-  h1: { color: '#fff', fontSize: 32, fontWeight: '300', marginBottom: 8 },
-  lead: { color: '#cbd5e1', fontSize: 15, marginBottom: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 24 },
-  eyebrow: { color: BLUE, fontWeight: '600', fontSize: 13, marginBottom: 4 },
-  title: { fontSize: 26, fontWeight: '700', color: '#1e293b' },
-  subtitle: { fontSize: 13, color: '#64748b', marginTop: 6, marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#0f172a',
-  },
-  show: { position: 'absolute', right: 0, top: 0, bottom: 0, justifyContent: 'center', paddingHorizontal: 12 },
-  showText: { color: BLUE, fontSize: 12 },
-  error: { color: '#dc2626', backgroundColor: '#fef2f2', padding: 8, borderRadius: 4, marginTop: 14, fontSize: 12 },
-  button: { backgroundColor: BLUE, borderRadius: 4, paddingVertical: 12, alignItems: 'center', marginTop: 20 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  reset: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 4, paddingVertical: 12, alignItems: 'center', marginTop: 12 },
-  resetText: { color: '#475569', fontWeight: '600', fontSize: 15 },
-  divider: { borderTopWidth: 1, borderTopColor: '#f1f5f9', marginTop: 16 },
-  switcher: { position: 'absolute', top: 50, right: 16, zIndex: 20, alignItems: 'flex-end' },
-  switchBtn: { width: 44, height: 44, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center' },
-  menu: { marginTop: 8, backgroundColor: '#fff', borderRadius: 8, padding: 6, gap: 4 },
-  menuItem: { minWidth: 150, height: 40, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12 },
-  direct: { backgroundColor: '#334155', borderRadius: 4, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: NAVY, overflow: 'hidden' },
+  // Soft shapes behind the hero. They carry no information.
+  glow: { position: 'absolute', top: -150, right: -130, width: 420, height: 420, borderRadius: 210, backgroundColor: 'rgba(0,198,150,0.13)' },
+  ring: { position: 'absolute', top: 120, left: -150, width: 300, height: 300, borderRadius: 150, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  scroll: { flexGrow: 1 },
+  hero: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 28, gap: 14 },
+  heroTyping: { paddingTop: 40, paddingBottom: 16 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mark: { width: 32, height: 32, borderRadius: 10, backgroundColor: GREEN, alignItems: 'center', justifyContent: 'center' },
+  markText: { color: NAVY, fontWeight: '900', fontSize: 18, marginTop: -2 },
+  brandText: { color: '#e2e8f0', fontWeight: '700', fontSize: 14, letterSpacing: 0.4 },
+  langs: { flexDirection: 'row', gap: 6 },
+  lang: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5 },
+  langOn: { backgroundColor: GREEN, borderColor: GREEN },
+  langText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  title: { color: '#fff', fontSize: 44, fontWeight: '800', letterSpacing: -1, marginTop: 28 },
+  route: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN },
+  line: { width: 34, height: 2, borderRadius: 1, backgroundColor: 'rgba(0,198,150,0.45)' },
+  pin: { fontSize: 20 },
+  lead: { color: '#94a3b8', fontSize: 14, lineHeight: 20, maxWidth: 320 },
+  // marginTop auto keeps the sheet at the bottom while the title is shown; while typing it sits right under the logo, only as tall as its content.
+  sheet: { marginTop: 'auto', backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 24, paddingTop: 28, paddingBottom: 32, gap: 14 },
+  sheetTyping: { marginTop: 0, paddingBottom: 20, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
+  sheetTitle: { fontSize: 24, fontWeight: '800', color: NAVY },
+  sheetSub: { fontSize: 14, color: '#64748b', marginTop: -8 },
+  field: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', paddingHorizontal: 14 },
+  fieldIcon: { fontSize: 16, marginRight: 10 },
+  input: { flex: 1, paddingVertical: 15, fontSize: 15, color: NAVY },
+  show: { color: '#0f766e', fontWeight: '700', fontSize: 13, paddingLeft: 8 },
+  error: { color: '#b91c1c', backgroundColor: '#fef2f2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13 },
+  button: { backgroundColor: GREEN, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 4 },
+  buttonText: { color: NAVY, fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  devWrap: { marginTop: 6, gap: 8, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  devLabel: { fontSize: 11, color: '#94a3b8', fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
+  devRow: { flexDirection: 'row', gap: 8 },
+  devBtn: { flex: 1, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+  devText: { color: '#475569', fontWeight: '700', fontSize: 12 },
 });

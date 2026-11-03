@@ -74,6 +74,21 @@ export function unwrapList<T>(data: unknown): T[] {
   return [];
 }
 
+// Every row of a paginated list (50 per page), up to `maxPages`. `total` is the server's full count, so a caller can say
+// when it is showing only part. Pages are asked for by number: the `next` link can point at the wrong scheme behind a proxy.
+export async function fetchAll<T>(url: string, params?: object, maxPages = 10): Promise<{ rows: T[]; total: number }> {
+  const rows: T[] = [];
+  let total = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    const { data } = await api.get(url, { params: { ...params, page } });
+    if (Array.isArray(data)) return { rows: data as T[], total: data.length };
+    rows.push(...((data?.results ?? []) as T[]));
+    total = data?.count ?? rows.length;
+    if (!data?.next) break;
+  }
+  return { rows, total };
+}
+
 export function errorMessage(e: unknown): string {
   const d = (e as { response?: { data?: unknown } })?.response?.data;
   if (typeof d === 'string') return d;

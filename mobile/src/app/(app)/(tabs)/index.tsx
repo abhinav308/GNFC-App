@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
-import { setOnDuty } from '../../duty';
-import { useT } from '../../i18n';
-import api, { errorMessage, unwrapList } from '../../services/api';
-import { requestTrackingPermissions, startTracking, stopTracking, getCurrentPoint } from '../../services/tracking';
-import { useAuth } from '../../hooks/useAuth';
-import type { Session, TrackingEvent } from '../../types';
+import SelfieCamera, { SelfieAsset } from '../../../components/SelfieCamera';
+import { setOnDuty } from '../../../duty';
+import { useT } from '../../../i18n';
+import api, { errorMessage, unwrapList } from '../../../services/api';
+import { requestTrackingPermissions, startTracking, stopTracking, getCurrentPoint, getQuickPoint } from '../../../services/tracking';
+import { useAuth } from '../../../hooks/useAuth';
+import type { Session } from '../../../types';
 
 function formatShortDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -15,12 +15,19 @@ function formatShortDuration(seconds: number) {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
-function trackingBadge(status?: string) {
-  if (status === 'ACTIVE') return { bg: '#ecfdf5', fg: '#16a34a', label: 'Tracking active' };
-  if (status === 'PAUSED') return { bg: '#fffbeb', fg: '#d97706', label: 'Tracking paused' };
-  if (status === 'PUNCHED_OUT') return { bg: '#f1f5f9', fg: '#64748b', label: 'Punched out' };
-  // LOCATION_UNAVAILABLE, PERMISSION_DENIED, OFFLINE — all read as an obvious problem state.
-  return { bg: '#fef2f2', fg: '#dc2626', label: `Tracking paused — ${status ?? 'unknown'}` };
+// Start location tracking without making the screen wait for permission dialogs.
+function beginTracking() {
+  requestTrackingPermissions()
+    .then((perm) => (perm.granted ? startTracking() : Alert.alert('Limited tracking', perm.reason ?? 'Background location was not granted.')))
+    .catch(() => {});
+}
+
+function trackingBadge(status: string | undefined, t: (k: string) => string) {
+  if (status === 'ACTIVE') return { bg: '#ecfdf5', fg: '#16a34a', label: t('trackActive') };
+  if (status === 'PAUSED') return { bg: '#fffbeb', fg: '#d97706', label: t('trackPaused') };
+  if (status === 'PUNCHED_OUT') return { bg: '#f1f5f9', fg: '#64748b', label: t('trackPunchedOut') };
+  // LOCATION_UNAVAILABLE, PERMISSION_DENIED, OFFLINE: all read as an obvious problem state.
+  return { bg: '#fef2f2', fg: '#dc2626', label: `${t('trackPaused')} — ${status ? t(`st_${status}`) : '?'}` };
 }
 
 function sessionBadge(status: Session['status']) {
@@ -43,36 +50,34 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const { t } = useT();
-  const [allSessions, setAllSessions] = useState<Session[]>([]);
-  const [events, setEvents] = useState<TrackingEvent[]>([]);
   const [consent, setConsent] = useState(false);
   const [gps, setGps] = useState<{ status: 'idle' | 'busy' | 'ok' | 'fail'; text?: string }>({ status: 'idle' });
-  const [asset, setAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  // The fix from step 1, reused at punch-in so we don't wait for a second GPS search.
+  const [gpsPoint, setGpsPoint] = useState<{ latitude: number; longitude: number; accuracy: number | null; at: number } | null>(null);
+  const firstLoad = useRef(true);
+  const [asset, setAsset] = useState<SelfieAsset | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [note, setNote] = useState('');
   const [noteMsg, setNoteMsg] = useState('');
 
   const loadCurrent = useCallback(async () => {
-    setLoading(true);
+    if (firstLoad.current) setLoading(true); // only the first load blocks the screen; later focuses refresh quietly
     try {
       const [curRes, historyRes] = await Promise.all([
         api.get('/attendance/current/'),
         api.get('/attendance/history/').catch(() => null),
       ]);
       setSession(curRes.data.session ?? null);
-      setEvents(curRes.data.events ?? []);
       if (historyRes) {
         const list = unwrapList<Session>(historyRes.data);
         list.sort((a, b) => new Date(b.punch_in_at).getTime() - new Date(a.punch_in_at).getTime());
-        setAllSessions(list);
         setRecentSessions(list.slice(0, 3));
       }
-      if (curRes.data.session?.status === 'ACTIVE') {
-        const perm = await requestTrackingPermissions();
-        if (perm.granted) await startTracking();
-      }
+      if (curRes.data.session?.status === 'ACTIVE') beginTracking();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      firstLoad.current = false;
       setLoading(false);
     }
   }, []);
@@ -83,32 +88,24 @@ export default function HomeScreen() {
     }, [loadCurrent]),
   );
 
+  // Switch the camera off when leaving this tab.
+  useFocusEffect(useCallback(() => () => setCameraOpen(false), []));
+
   useEffect(() => {
     if (session?.status !== 'ACTIVE') return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [session?.status]);
 
-  const pickSelfie = async (fromCamera: boolean) => {
-    setError('');
-    const opts = { allowsEditing: true, aspect: [1, 1] as [number, number], quality: 0.7 };
-    if (fromCamera) {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) return setError('Camera permission is required to take a selfie.');
-      const r = await ImagePicker.launchCameraAsync({ ...opts, cameraType: ImagePicker.CameraType.front });
-      if (!r.canceled) setAsset(r.assets[0]);
-    } else {
-      const r = await ImagePicker.launchImageLibraryAsync({ ...opts, mediaTypes: ['images'] });
-      if (!r.canceled) setAsset(r.assets[0]);
-    }
-  };
-
+  // One tap: agreeing to the notice and getting the GPS fix are the same action.
   const acquireGps = async () => {
+    setConsent(true);
     setGps({ status: 'busy' });
     try {
       const perm = await requestTrackingPermissions();
       if (!perm.granted && perm.reason?.startsWith('Location permission denied')) throw new Error(perm.reason);
       const p = await getCurrentPoint();
+      setGpsPoint({ ...p, at: Date.now() });
       setGps({ status: 'ok', text: `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}${p.accuracy != null ? ` (±${Math.round(p.accuracy)}m)` : ''}` });
     } catch (e) {
       setGps({ status: 'fail', text: e instanceof Error ? e.message : 'Could not get a GPS fix' });
@@ -120,7 +117,7 @@ export default function HomeScreen() {
     setError('');
     setBusy(true);
     try {
-      const point = await getCurrentPoint();
+      const point = gpsPoint && Date.now() - gpsPoint.at < 120000 ? gpsPoint : await getCurrentPoint();
       const form = new FormData();
       form.append('selfie', {
         uri: asset.uri,
@@ -138,13 +135,8 @@ export default function HomeScreen() {
       setAsset(null);
       setConsent(false);
       setGps({ status: 'idle' });
-
-      const perm = await requestTrackingPermissions();
-      if (perm.granted) {
-        await startTracking();
-      } else {
-        Alert.alert('Limited tracking', perm.reason ?? 'Background location was not granted.');
-      }
+      setGpsPoint(null);
+      beginTracking();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -167,15 +159,10 @@ export default function HomeScreen() {
     setError('');
     setBusy(true);
     try {
-      let point: { latitude: number; longitude: number; accuracy?: number | null } | null = null;
-      try {
-        point = await getCurrentPoint();
-      } catch {
-        // final location is optional on punch-out
-      }
+      const point = await getQuickPoint(); // the final location is optional, so never wait long for it
       const r = await api.post('/attendance/punch-out/', point ?? {});
       setSession(r.data);
-      await stopTracking();
+      stopTracking().catch(() => {});
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -210,7 +197,7 @@ export default function HomeScreen() {
             <Text style={styles.statusLabel}>{t('onDuty').toUpperCase()}</Text>
             <Text style={styles.durationText}>{formatDuration(duration)}</Text>
             {(() => {
-              const tb = trackingBadge(session?.tracking_status);
+              const tb = trackingBadge(session?.tracking_status, t);
               return (
                 <View style={[styles.trackingBadge, { backgroundColor: tb.bg }]}>
                   <Text style={[styles.trackingBadgeText, { color: tb.fg }]}>{tb.label}</Text>
@@ -222,57 +209,61 @@ export default function HomeScreen() {
             </Text>
           </View>
           <TouchableOpacity style={[styles.actionButton, styles.punchOutButton]} onPress={punchOut} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>PUNCH OUT (END SHIFT)</Text>}
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>{t('punchOutBtn')}</Text>}
           </TouchableOpacity>
-          <Text style={styles.hint}>Keep the app installed and background location allowed so tracking continues.</Text>
+          <Text style={styles.hint}>{t('keepTracking')}</Text>
         </>
       ) : (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Attendance Punch-In</Text>
-          <Text style={styles.stepSub}>Verify consent, acquire GPS lock, and capture front selfie</Text>
-
-          <View style={styles.step}>
-            <Text style={styles.stepTitle}>1  Session Location & Selfie Consent</Text>
-            <TouchableOpacity style={styles.consentRow} onPress={() => setConsent(!consent)}>
-              <View style={[styles.box, consent && styles.boxOn]}>{consent ? <Text style={styles.tick}>✓</Text> : null}</View>
-              <Text style={styles.consentText}>I consent to session-scoped location tracking and selfie attendance verification for my shift (Policy v1.0).</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.cardTitle}>{t('punchInTitle')}</Text>
+          <Text style={styles.stepSub}>{t('punchInSub')}</Text>
 
           <View style={styles.step}>
             <View style={styles.stepHead}>
-              <Text style={styles.stepTitle}>2  GPS Position Fix</Text>
-              <TouchableOpacity onPress={acquireGps} disabled={gps.status === 'busy'}>
-                <Text style={styles.link}>{gps.status === 'busy' ? 'Locating…' : gps.status === 'ok' ? 'Refresh' : 'Acquire GPS'}</Text>
-              </TouchableOpacity>
+              <Text style={styles.stepTitle}>1  {t('stepLocation')}</Text>
+              {gps.status === 'ok' ? (
+                <TouchableOpacity onPress={acquireGps}>
+                  <Text style={styles.link}>{t('refresh')}</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
+            <Text style={styles.consentText}>{t('consentText')}</Text>
+            {gps.status !== 'ok' ? (
+              <TouchableOpacity
+                style={[styles.pickBtn, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}
+                onPress={acquireGps}
+                disabled={gps.status === 'busy'}
+              >
+                <Text style={[styles.pickText, { color: '#047857' }]}>{gps.status === 'busy' ? t('locating') : t('agreeGps')}</Text>
+              </TouchableOpacity>
+            ) : null}
             {gps.text ? <Text style={[styles.gpsText, gps.status === 'fail' && { color: '#dc2626' }]}>{gps.text}</Text> : null}
           </View>
 
           <View style={styles.step}>
-            <Text style={styles.stepTitle}>3  Front Selfie Verification</Text>
+            <Text style={styles.stepTitle}>2  {t('stepSelfie')}</Text>
             {asset ? (
               <View style={styles.selfieRow}>
                 <Image source={{ uri: asset.uri }} style={styles.selfieThumb} />
                 <TouchableOpacity onPress={() => setAsset(null)}>
-                  <Text style={[styles.link, { color: '#e11d48' }]}>Retake</Text>
+                  <Text style={[styles.link, { color: '#e11d48' }]}>{t('retake')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.pickRow}>
-                <TouchableOpacity style={[styles.pickBtn, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]} onPress={() => pickSelfie(true)}>
-                  <Text style={[styles.pickText, { color: '#047857' }]}>Open Camera</Text>
+              cameraOpen ? (
+                <SelfieCamera onCapture={(a) => { setAsset(a); setCameraOpen(false); }} onCancel={() => setCameraOpen(false)} />
+              ) : (
+                <TouchableOpacity style={styles.cameraStart} onPress={() => { setError(''); setCameraOpen(true); }} accessibilityRole="button">
+                  <View style={styles.guideOval} />
+                  <Text style={styles.cameraStartText}>{t('tapToOpenCamera')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.pickBtn} onPress={() => pickSelfie(false)}>
-                  <Text style={styles.pickText}>Upload Photo Instead</Text>
-                </TouchableOpacity>
-              </View>
+              )
             )}
           </View>
 
           <View style={styles.req}>
-            <Text style={styles.reqTitle}>PUNCH-IN REQUIREMENTS</Text>
-            {([[consent, 'Privacy & Tracking Policy Consent'], [gps.status === 'ok', 'Accurate GPS Location'], [!!asset, 'Front Selfie / Verification Photo']] as [boolean, string][]).map(([ok, label]) => (
+            <Text style={styles.reqTitle}>{t('requirements').toUpperCase()}</Text>
+            {([[consent, t('reqConsent')], [gps.status === 'ok', t('reqGps')], [!!asset, t('reqSelfie')]] as [boolean, string][]).map(([ok, label]) => (
               <Text key={label} style={[styles.reqItem, ok && { color: '#059669', fontWeight: '700' }]}>{ok ? '●' : '○'}  {label}</Text>
             ))}
           </View>
@@ -281,36 +272,12 @@ export default function HomeScreen() {
             const ready = consent && gps.status === 'ok' && !!asset && !busy;
             return (
               <TouchableOpacity style={[styles.actionButton, ready ? styles.punchInButton : styles.disabledButton]} onPress={punchIn} disabled={!ready}>
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.actionButtonText, !ready && { color: '#94a3b8' }]}>PUNCH IN (START SHIFT)</Text>}
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={[styles.actionButtonText, !ready && { color: '#94a3b8' }]}>{t('punchInBtn')}</Text>}
               </TouchableOpacity>
             );
           })()}
         </View>
       )}
-
-      {(() => {
-        const todayStr = new Date().toDateString();
-        const todays = allSessions.filter((x) => new Date(x.punch_in_at).toDateString() === todayStr);
-        const done = todays.filter((x) => x.status === 'COMPLETED').reduce((n, x) => n + x.duration_seconds, 0);
-        const shifts = new Set([...todays.map((x) => x.id), ...(session && isActive ? [session.id] : [])]).size;
-        const drops = events.filter((e) => e.event_type === 'LOCATION_UNAVAILABLE' || e.event_type === 'LOCATION_PERMISSION_DENIED').length;
-        return (
-          <View style={styles.card}>
-            <View style={styles.stepHead}>
-              <Text style={styles.cardTitle}>{t('todaysShift').toUpperCase()}</Text>
-              <Text style={styles.stepSub}>{new Date().toLocaleDateString()}</Text>
-            </View>
-            <View style={styles.tiles}>
-              {[[t('loggedHours'), formatShortDuration(done + (isActive ? duration : 0))], [t('shifts'), String(shifts)], [t('gpsDrops'), String(drops)]].map(([k, v]) => (
-                <View key={k} style={styles.tileBox}>
-                  <Text style={styles.stepSub}>{k}</Text>
-                  <Text style={styles.tileVal}>{v}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        );
-      })()}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t('fieldNotes')}</Text>
@@ -338,7 +305,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
         {recentSessions.length === 0 ? (
-          <Text style={[styles.stepSub, { textAlign: 'center', paddingVertical: 12 }]}>No previous sessions recorded.</Text>
+          <Text style={[styles.stepSub, { textAlign: 'center', paddingVertical: 12 }]}>{t('noRecent')}</Text>
         ) : (
           recentSessions.map((x, i) => {
             const b = sessionBadge(x.status);
@@ -459,14 +426,13 @@ const styles = StyleSheet.create({
   stepHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   stepTitle: { fontSize: 13, fontWeight: '800', color: '#1e293b' },
   link: { fontSize: 12, fontWeight: '700', color: '#2563eb' },
-  consentRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   consentText: { flex: 1, fontSize: 12, color: '#475569' },
-  box: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: '#94a3b8', alignItems: 'center', justifyContent: 'center' },
-  boxOn: { backgroundColor: '#00c696', borderColor: '#00c696' },
-  tick: { color: '#fff', fontSize: 13, fontWeight: '800' },
   gpsText: { fontSize: 12, color: '#047857' },
   selfieRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   selfieThumb: { width: 64, height: 64, borderRadius: 12 },
+  cameraStart: { width: '100%', aspectRatio: 1.4, borderRadius: 18, borderWidth: 2, borderColor: '#a7f3d0', borderStyle: 'dashed', backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  guideOval: { width: 70, height: 88, borderRadius: 999, borderWidth: 2, borderColor: '#10b981' },
+  cameraStartText: { fontSize: 13, fontWeight: '800', color: '#047857' },
   pickRow: { flexDirection: 'row', gap: 8 },
   pickBtn: { flex: 1, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f1f5f9', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   pickText: { fontSize: 12, fontWeight: '700', color: '#475569', textAlign: 'center' },

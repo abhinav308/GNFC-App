@@ -68,3 +68,27 @@
     @apply bg-slate-100 text-slate-700 border border-slate-200;
   }
 }
+
+@media (max-width: 639px) {
+  .filter-panel[data-open="false"] > :not(:first-child) { display: none; }
+}
+
+/* Admin portal palette: navy + white + subtle blue. Scoped so the employee portal keeps its own look. */
+.admin-theme .btn,
+.admin-theme .btn-primary,
+.admin-theme .bg-\[\#00a29a\] { background-color: #1e3a8a; color: #fff; }
+.admin-theme .btn:hover,
+.admin-theme .btn-primary:hover { background-color: #1e40af; }
+.admin-theme .btn-ghost { background-color: #fff; color: #334155; }
+.admin-theme .btn-ghost:hover { background-color: #f1f5f9; }
+.admin-theme .btn-danger { background-color: #e11d48; }
+.admin-theme .btn-outline { background-color: transparent; color: #1e3a8a; border-color: #1e3a8a; }
+.admin-theme .btn-outline:hover { background-color: #eff6ff; }
+.admin-theme .btn-secondary { background-color: #475569; }
+.admin-theme .badge-info { background-color: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.admin-theme .input:focus { border-color: #1e40af; box-shadow: 0 0 0 1px #1e40af; }
+.admin-theme .text-teal-700,
+.admin-theme .text-\[\#00a29a\] { color: #1d4ed8; }
+.admin-theme .hover\:bg-teal-50:hover { background-color: #eff6ff; }
+.admin-theme .hover\:border-teal-400:hover { border-color: #60a5fa; }
+.admin-theme .accent-\[\#00a29a\] { accent-color: #1e3a8a; }

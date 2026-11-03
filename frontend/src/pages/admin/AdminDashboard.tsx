@@ -4,6 +4,9 @@ import EventTimeline from '../../components/EventTimeline';
 import EvidenceImage from '../../components/EvidenceImage';
 import Layout from '../../components/Layout';
 import MapView, { type MapMarker } from '../../components/MapView';
+import FilterToggle from '../../components/FilterToggle';
+import { Kpi, TrendChart } from '../../components/Kpi';
+import OnboardEmployee from '../../components/OnboardEmployee';
 import { useAuth } from '../../hooks/useAuth';
 import api, { errorMessage, tokens, WS_URL } from '../../services/api';
 import { fmtDate, fmtDuration, fmtTime, STATUS_COLOR } from '../../services/format';
@@ -16,6 +19,7 @@ import type {
   LivePoint,
   Page,
   Session,
+  TrackingStatus,
   Visit,
   VisitPhoto,
 } from '../../types';
@@ -23,86 +27,14 @@ import type {
 type AdminTab = 'overview' | 'users' | 'map' | 'visits' | 'attendance' | 'leaves' | 'settings';
 
 const TAB_TITLES: Record<AdminTab, string | undefined> = {
-  overview: 'Field Activity & Attendance Command Center',
-  map: 'Live Map',
+  overview: 'Dashboard',
+  map: 'Live Employee Tracking',
   visits: 'Field Visits',
-  attendance: 'Attendance Records',
+  attendance: 'Attendance Management',
   leaves: 'Leave Requests',
-  users: 'Employees & Users',
-  settings: 'Settings',
+  users: 'Employee Management',
+  settings: 'Administration Tools',
 };
-
-const STAT_TILE_COLORS = {
-  blue: {
-    gradient: 'from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800',
-    label: 'text-blue-100',
-    caption: 'text-blue-200',
-    pill: 'bg-blue-500/50 group-hover:bg-white group-hover:text-blue-700',
-    ring: 'focus:ring-blue-400',
-  },
-  emerald: {
-    gradient: 'from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800',
-    label: 'text-emerald-100',
-    caption: 'text-emerald-200',
-    pill: 'bg-emerald-500/50 group-hover:bg-white group-hover:text-emerald-700',
-    ring: 'focus:ring-emerald-400',
-  },
-  cyan: {
-    gradient: 'from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800',
-    label: 'text-cyan-100',
-    caption: 'text-cyan-200',
-    pill: 'bg-cyan-500/50 group-hover:bg-white group-hover:text-cyan-700',
-    ring: 'focus:ring-cyan-400',
-  },
-  rose: {
-    gradient: 'from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800',
-    label: 'text-rose-100',
-    caption: 'text-rose-200',
-    pill: 'bg-rose-500/50 group-hover:bg-white group-hover:text-rose-700',
-    ring: 'focus:ring-rose-400',
-  },
-  violet: {
-    gradient: 'from-violet-600 to-violet-700 hover:from-violet-700 hover:to-violet-800',
-    label: 'text-violet-100',
-    caption: 'text-violet-200',
-    pill: 'bg-violet-500/50 group-hover:bg-white group-hover:text-violet-700',
-    ring: 'focus:ring-violet-400',
-  },
-} as const;
-
-function StatTile({
-  color,
-  label,
-  value,
-  caption,
-  action,
-  onAction,
-}: {
-  color: keyof typeof STAT_TILE_COLORS;
-  label: string;
-  value: number | string;
-  caption: string;
-  action: string;
-  onAction: () => void;
-}) {
-  const c = STAT_TILE_COLORS[color];
-  return (
-    <button
-      type="button"
-      onClick={onAction}
-      className={`rounded-xl bg-gradient-to-br ${c.gradient} text-white p-4 shadow-sm hover:shadow-md transition-all text-left relative overflow-hidden group flex flex-col h-full focus:outline-none focus:ring-2 ${c.ring}`}
-    >
-      <p className={`text-xs font-bold uppercase tracking-wider leading-tight min-h-[2rem] ${c.label}`}>{label}</p>
-      <div className="flex items-center justify-between gap-2 mt-3">
-        <p className="text-3xl font-extrabold tracking-tight leading-none">{value}</p>
-        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded text-white transition-colors whitespace-nowrap shrink-0 ${c.pill}`}>
-          {action} →
-        </span>
-      </div>
-      <p className={`text-[11px] ${c.caption} mt-auto pt-3 font-medium leading-snug`}>{caption}</p>
-    </button>
-  );
-}
 
 const VISIT_CATEGORIES: { id: string; label: string }[] = [
   { id: '', label: 'All Categories' },
@@ -129,6 +61,15 @@ const VISIT_OUTCOMES: { id: string; label: string }[] = [
   { id: 'ACTION_REQUIRED', label: 'Action Required' },
   { id: 'FOLLOW_UP_NEEDED', label: 'Follow-Up Needed' },
   { id: 'CANCELLED', label: 'Cancelled' },
+];
+
+const TRACKING_LABELS: [TrackingStatus, string][] = [
+  ['ACTIVE', 'Tracking'],
+  ['PAUSED', 'Paused by employee'],
+  ['LOCATION_UNAVAILABLE', 'Location unavailable'],
+  ['PERMISSION_DENIED', 'Location permission off'],
+  ['OFFLINE', 'Offline (no network)'],
+  ['PUNCHED_OUT', 'Punched out'],
 ];
 
 const CATEGORY_NAMES: Record<string, string> = {
@@ -195,6 +136,8 @@ export default function AdminDashboard() {
 
   // Users Tab Filters
   const [q, setQ] = useState('');
+  const [usersTick, setUsersTick] = useState(0);
+  const [showOnboard, setShowOnboard] = useState(false);
   const [activeOnly, setActiveOnly] = useState('');
 
   // Attendance Tab Filters & CSV Export State
@@ -204,7 +147,15 @@ export default function AdminDashboard() {
   const [attStatus, setAttStatus] = useState('');
   const [departments, setDepartments] = useState<string[]>(['IT Division (GNFC)']);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [attFiltersOpen, setAttFiltersOpen] = useState(false); // phones only: the panel starts collapsed
+  const [visitFiltersOpen, setVisitFiltersOpen] = useState(false);
   const [attLoading, setAttLoading] = useState(false);
+
+  // A shift still open on an earlier (UTC) day means the employee never punched out.
+  const isMissing = (x: Session) => x.status === 'ACTIVE' && x.punch_in_at.slice(0, 10) < new Date().toISOString().slice(0, 10);
+  const shownSessions = attStatus === 'MISSING' ? sessions.filter(isMissing) : sessions;
+  const missingCount = sessions.filter(isMissing).length;
+  const totalSeconds = shownSessions.filter((x) => x.status === 'COMPLETED').reduce((n, x) => n + x.duration_seconds, 0);
 
   const [wsOk, setWsOk] = useState(false);
   const [selectedLiveUser, setSelectedLiveUser] = useState<LivePoint | null>(null);
@@ -233,7 +184,7 @@ export default function AdminDashboard() {
           date_from: attDateFrom || undefined,
           date_to: attDateTo || undefined,
           department: attDepartment || undefined,
-          status: attStatus || undefined,
+          status: attStatus === 'MISSING' ? 'ACTIVE' : attStatus || undefined,
         },
       })
       .then((r) => setSessions(r.data.results || []))
@@ -256,7 +207,7 @@ export default function AdminDashboard() {
         .then((r) => setUsers(r.data.results));
     }, 250);
     return () => clearTimeout(t);
-  }, [q, activeOnly, canUsers]);
+  }, [q, activeOnly, canUsers, usersTick]);
 
   // Live updates over WebSocket (dashboard screen)
   useEffect(() => {
@@ -661,48 +612,34 @@ export default function AdminDashboard() {
       }}
     >
       {/* Metric Summary Cards */}
-      {activeTab === 'overview' && <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <StatTile
-          color="blue"
-          label="Total Users"
-          value={summary?.total_users ?? '—'}
-          caption="Enrolled staff accounts"
-          action="Users"
-          onAction={() => setActiveTab('users')}
-        />
-        <StatTile
-          color="emerald"
-          label="Active Users"
-          value={summary?.active_users ?? '—'}
-          caption={`${summary?.currently_tracking ?? 0} live · ${summary?.location_unavailable ?? 0} unavail`}
-          action="Filter"
-          onAction={() => setActiveTab('users')}
-        />
-        <StatTile
-          color="cyan"
-          label="Currently Tracking"
-          value={summary?.currently_tracking ?? Object.keys(live).length}
-          caption="Live GPS broadcast"
-          action="Live Map"
-          onAction={() => setActiveTab('map')}
-        />
-        <StatTile
-          color="rose"
-          label="Location Unavailable"
-          value={summary?.location_unavailable ?? 0}
-          caption="GPS lost or permission denied"
-          action="Audit"
-          onAction={() => setActiveTab('attendance')}
-        />
-        <StatTile
-          color="violet"
-          label="Completed Sessions"
-          value={summary?.completed_sessions ?? 0}
-          caption="Punched-out shift records"
-          action="Logs"
-          onAction={() => setActiveTab('attendance')}
-        />
-      </div>}
+      {activeTab === 'overview' && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+            <Kpi label="Total Employees" value={summary?.total_users ?? '—'} caption="Active field staff" onClick={() => setActiveTab('users')} />
+            <Kpi label="Present Today" value={summary?.present_today ?? '—'} tone="green" caption={`${summary?.today_punch_ins ?? 0} punch-ins · ${summary?.today_punch_outs ?? 0} punch-outs`} onClick={() => setActiveTab('attendance')} />
+            <Kpi label="Absent Today" value={summary?.absent_today ?? '—'} tone="red" caption={`${summary?.on_leave_today ?? 0} on approved leave (not counted)`} onClick={() => setActiveTab('attendance')} />
+            <Kpi label="Currently Working" value={summary?.active_users ?? '—'} tone="sky" caption="Punched in, not yet out" onClick={() => setActiveTab('map')} />
+            <Kpi label="On Field Duty" value={summary?.on_field_duty ?? '—'} caption="A visit is in progress" onClick={() => setActiveTab('visits')} />
+            <Kpi label="Active Tracking Sessions" value={summary?.currently_tracking ?? Object.keys(live).length} tone="green" caption={`${summary?.location_unavailable ?? 0} with location unavailable`} onClick={() => setActiveTab('map')} />
+            <Kpi label="Completed Visits Today" value={summary?.completed_visits_today ?? '—'} caption={`${summary?.today_visits ?? 0} started today`} onClick={() => setActiveTab('visits')} />
+            <Kpi label="Completed Shifts" value={summary?.completed_sessions ?? '—'} tone="amber" caption="All time" onClick={() => setActiveTab('attendance')} />
+          </div>
+          <div className="card mt-4">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-900">Attendance — last 7 days</h3>
+                <p className="text-xs text-slate-500">Employees who punched in each day (UTC days)</p>
+              </div>
+              {summary?.present_today !== undefined && (
+                <span className="badge badge-info">
+                  {summary.present_today} present · {summary.absent_today} absent today
+                </span>
+              )}
+            </div>
+            {summary?.trend ? <TrendChart data={summary.trend} /> : <p className="py-10 text-center text-sm text-slate-400">{summary ? 'Needs the updated backend (not deployed yet).' : 'Loading…'}</p>}
+          </div>
+        </>
+      )}
 
       {/* ================= TAB 1: OVERVIEW ================= */}
       {activeTab === 'overview' && (
@@ -813,13 +750,24 @@ export default function AdminDashboard() {
       {/* ================= TAB 2: USERS / EMPLOYEES ================= */}
       {activeTab === 'users' && (
         <div className="space-y-4">
+          {showOnboard && <OnboardEmployee onDone={() => setUsersTick((n) => n + 1)} onClose={() => setShowOnboard(false)} />}
           <div className="card overflow-x-auto space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h2 className="font-bold text-slate-900">Enrolled Field Personnel</h2>
                 <p className="text-xs text-slate-500">Manage employee accounts and view session histories</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {viewer?.role === 'ADMIN' && (
+                  <button type="button" className="btn btn-primary" onClick={() => setShowOnboard((v) => !v)}>
+                    + Add new employee
+                  </button>
+                )}
+                {can(viewer, 'setup.employee') && (
+                  <button type="button" className="btn btn-ghost" onClick={() => nav('/admin/setup/employees')}>
+                    Edit employee details
+                  </button>
+                )}
                 <input
                   className="input !w-60"
                   placeholder="Search Name, ID, ESIC..."
@@ -847,6 +795,7 @@ export default function AdminDashboard() {
                   <th className="px-3">ESIC Number</th>
                   <th className="px-3">Department</th>
                   <th className="px-3">Designation</th>
+                  <th className="px-3">Manager</th>
                   <th className="px-3">Shift Status</th>
                   <th className="px-3">Action</th>
                 </tr>
@@ -854,7 +803,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-slate-100 bg-white">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
                       No matching employee records found.
                     </td>
                   </tr>
@@ -871,22 +820,36 @@ export default function AdminDashboard() {
                       <td className="font-mono text-slate-500 text-xs">{u.profile?.esic_number || '—'}</td>
                       <td className="text-xs text-slate-600">{u.profile?.department || 'IT Division'}</td>
                       <td className="text-xs text-slate-600">{u.profile?.designation || 'Field Officer'}</td>
+                      <td className="text-xs text-slate-600">{u.profile?.reports_to?.name || '—'}</td>
                       <td>
-                        <span
-                          className={`badge ${
-                            u.has_active_session ? 'badge-success' : 'badge-neutral'
-                          }`}
-                        >
-                          {u.has_active_session ? '🟢 In Field' : 'Off Shift'}
-                        </span>
+                        {u.is_active ? (
+                          <span className={`badge ${u.has_active_session ? 'badge-success' : 'badge-neutral'}`}>
+                            {u.has_active_session ? '🟢 In Field' : 'Off Shift'}
+                          </span>
+                        ) : (
+                          <span className="badge badge-danger">Deactivated</span>
+                        )}
                       </td>
-                      <td>
+                      <td className="whitespace-nowrap space-x-1.5">
                         <Link
                           to={`/admin/users/${u.id}`}
                           className="btn btn-ghost text-xs py-1 px-2.5"
                         >
-                          View Details
+                          History
                         </Link>
+                        {can(viewer, 'user_management.user', 'edit') && (
+                          <button
+                            type="button"
+                            className={`btn text-xs py-1 px-2.5 ${u.is_active ? 'btn-ghost' : 'btn-primary'}`}
+                            onClick={async () => {
+                              if (u.is_active && !window.confirm(`Deactivate ${u.full_name || u.username}? They will not be able to log in. Their history is kept.`)) return;
+                              await api.patch(`/admin/users/${u.id}/`, { is_active: !u.is_active }).catch(() => undefined);
+                              setUsersTick((n) => n + 1);
+                            }}
+                          >
+                            {u.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -912,6 +875,53 @@ export default function AdminDashboard() {
             </div>
 
             <MapView markers={markers} height={520} />
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600" aria-label="Tracking status legend">
+              {TRACKING_LABELS.map(([k, label]) => (
+                <span key={k} className="inline-flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: STATUS_COLOR[k] }} />
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            <div className="overflow-x-auto rounded border border-slate-200">
+              <table className="w-full text-left text-sm min-w-[560px]">
+                <thead className="text-xs uppercase bg-[#00a29a] text-white">
+                  <tr>
+                    <th className="py-2.5 px-3">Employee</th>
+                    <th className="px-3">Tracking status</th>
+                    <th className="px-3">Last location update</th>
+                    <th className="px-3 text-right">History</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {Object.keys(live).length === 0 && (
+                    <tr><td colSpan={4} className="py-8 text-center text-slate-400">Nobody is on duty right now.</td></tr>
+                  )}
+                  {Object.values(live).map((p) => (
+                    <tr key={p.session_id} className="hover:bg-slate-50/60">
+                      <td className="py-2.5 px-3 font-medium text-slate-900">{p.display_name}</td>
+                      <td className="px-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: STATUS_COLOR[p.tracking_status] }} />
+                          {TRACKING_LABELS.find(([k]) => k === p.tracking_status)?.[1] ?? p.tracking_status}
+                        </span>
+                      </td>
+                      <td className="px-3 text-xs text-slate-700">
+                        {p.last_location_at ? `${fmtDate(p.last_location_at)} ${fmtTime(p.last_location_at)}` : 'No location yet'}
+                      </td>
+                      <td className="px-3 text-right">
+                        <Link to={`/admin/users/${p.user_id}`} className="text-xs font-semibold text-blue-900 hover:underline">Route &amp; history →</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Location can be unavailable for ordinary reasons (no signal, phone settings, battery saver). It is recorded as a status, not as misconduct.
+            </p>
 
             {selectedLiveUser && (
               <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -987,7 +997,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Filter & Search Bar: Search, Date Range, Department, Category, Status, Outcome */}
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+            <div className="filter-panel p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3" data-open={visitFiltersOpen}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5 text-blue-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -995,6 +1005,7 @@ export default function AdminDashboard() {
                   </svg>
                   <span>Filter & Search Field Visits</span>
                 </span>
+                <FilterToggle open={visitFiltersOpen} onClick={() => setVisitFiltersOpen((o) => !o)} active={[visitSearch, visitCategory, visitStatus, visitOutcome, visitDepartment, visitDateFrom, visitDateTo].filter(Boolean).length} />
                 {hasActiveVisitFilters && (
                   <button
                     type="button"
@@ -2009,7 +2020,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Filter Bar: Date Range, Department, Status */}
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+            <div className="filter-panel p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3" data-open={attFiltersOpen}>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5 text-blue-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2017,6 +2028,7 @@ export default function AdminDashboard() {
                   </svg>
                   <span>Filter Attendance Sessions</span>
                 </span>
+                <FilterToggle open={attFiltersOpen} onClick={() => setAttFiltersOpen((o) => !o)} active={[attDateFrom, attDateTo, attDepartment, attStatus].filter(Boolean).length} />
                 {hasActiveAttFilters && (
                   <button
                     type="button"
@@ -2079,6 +2091,7 @@ export default function AdminDashboard() {
                     <option value="">All Statuses</option>
                     <option value="ACTIVE">ACTIVE (In Field)</option>
                     <option value="COMPLETED">COMPLETED (Punched Out)</option>
+                    <option value="MISSING">MISSING PUNCH-OUT</option>
                   </select>
                 </div>
               </div>
@@ -2086,7 +2099,8 @@ export default function AdminDashboard() {
               {/* Filter Active Feedback */}
               <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 border-t border-slate-200/60">
                 <span>
-                  Showing <strong>{sessions.length}</strong> matching shift records
+                  Showing <strong>{shownSessions.length}</strong> matching shift records · <strong>{fmtDuration(totalSeconds)}</strong> worked
+                  {missingCount > 0 && <> · <strong className="text-rose-700">{missingCount} missing punch-out</strong></>}
                   {hasActiveAttFilters && ' (filtered)'}
                 </span>
                 {attLoading && <span className="text-blue-800 font-semibold">Updating records...</span>}
@@ -2111,7 +2125,7 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {sessions.length === 0 ? (
+                  {shownSessions.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="py-10 text-center text-slate-400">
                         {hasActiveAttFilters
@@ -2120,7 +2134,7 @@ export default function AdminDashboard() {
                       </td>
                     </tr>
                   ) : (
-                    sessions.map((s) => (
+                    shownSessions.map((s) => (
                       <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                         <td className="py-3 px-3 font-semibold text-slate-800 whitespace-nowrap">
                           {fmtDate(s.punch_in_at)}
@@ -2143,7 +2157,7 @@ export default function AdminDashboard() {
                           {s.punch_out_at ? fmtTime(s.punch_out_at) : '—'}
                         </td>
                         <td className="px-3 font-mono text-xs text-slate-800 whitespace-nowrap">
-                          {s.status === 'ACTIVE' ? 'In Progress' : fmtDuration(s.duration_seconds)}
+                          {isMissing(s) ? '—' : s.status === 'ACTIVE' ? 'In Progress' : fmtDuration(s.duration_seconds)}
                         </td>
                         <td className="px-3 whitespace-nowrap">
                           {s.interruptions > 0 ? (
@@ -2160,10 +2174,10 @@ export default function AdminDashboard() {
                         <td className="px-3 whitespace-nowrap">
                           <span
                             className={`badge ${
-                              s.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral'
+                              isMissing(s) ? 'badge-danger' : s.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral'
                             }`}
                           >
-                            {s.status}
+                            {isMissing(s) ? 'MISSING PUNCH-OUT' : s.status}
                           </span>
                         </td>
                         <td className="px-3 text-right whitespace-nowrap">

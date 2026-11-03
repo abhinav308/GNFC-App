@@ -24,7 +24,7 @@ export default function Language() {
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={s.note}>Menus and headings adapt to your selected language. Form content stays in English.</Text>
+      <Text style={s.note}>{t('langNote')}</Text>
     </ScrollView>
   );
 }

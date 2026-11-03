@@ -36,7 +36,7 @@ export default function Leaves() {
       reloadKey={filter}
       empty="No leave requests."
       header={
-        <Header title="Leave Requests">
+        <Header title="Leave Requests" back>
           <View style={styles.seg}>
             {FILTERS.map((f) => (
               <TouchableOpacity key={f} style={[styles.btn, filter === f && styles.on]} onPress={() => setFilter(f)}>

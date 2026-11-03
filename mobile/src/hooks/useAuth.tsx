@@ -1,5 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { setOnDuty } from '../duty';
 import api, { tokens } from '../services/api';
+import { stopTracking } from '../services/tracking';
 import type { User } from '../types';
 
 interface AuthCtx {
@@ -42,6 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Stop the background location task too, or it keeps running (and could feed the next user who signs in on this phone).
+    stopTracking().catch(() => {});
+    setOnDuty(false);
     tokens.clear();
     setUser(null);
   }, []);

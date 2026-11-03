@@ -7,6 +7,7 @@ export interface AdminNavItem {
   icon: string; // name understood by Layout's <Icon>
   route: string;
   screen?: ScreenKey; // omitted = every portal user
+  adminOnly?: boolean; // the backend allows the ADMIN role only
 }
 
 export interface AdminNavGroup {
@@ -18,27 +19,33 @@ export interface AdminNavGroup {
 /** The admin portal side menu — the single source for AdminShell and the post-login landing page. */
 export const ADMIN_NAV: AdminNavGroup[] = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
+    id: 'main',
+    label: 'Main',
     items: [
-      { id: 'overview', label: 'Command Center', icon: 'home', route: '/admin/overview', screen: 'dashboard' },
-      { id: 'map', label: 'Live Map', icon: 'map', route: '/admin/map', screen: 'dashboard' },
+      { id: 'overview', label: 'Dashboard', icon: 'overview', route: '/admin/overview', screen: 'dashboard' },
+      { id: 'users', label: 'Employee Management', icon: 'users', route: '/admin/users', screen: 'user_management.user' },
+      { id: 'map', label: 'Live Employee Tracking', icon: 'map', route: '/admin/map', screen: 'dashboard' },
+      { id: 'attendance', label: 'Attendance Management', icon: 'attendance', route: '/admin/attendance', screen: 'attendance.sessions' },
       { id: 'visits', label: 'Field Visits', icon: 'visits', route: '/admin/visits', screen: 'attendance.visits' },
-      { id: 'attendance', label: 'Attendance Records', icon: 'attendance', route: '/admin/attendance', screen: 'attendance.sessions' },
       { id: 'leaves', label: 'Leave Requests', icon: 'leaves', route: '/admin/leaves', screen: 'attendance.leaves' },
-      { id: 'users', label: 'Employees & Users', icon: 'users', route: '/admin/users', screen: 'user_management.user' },
+      { id: 'reports', label: 'Reports & Analytics', icon: 'reports', route: '/admin/reports', screen: 'reports' },
     ],
   },
   {
-    id: 'general',
-    label: '',
-    items: [{ id: 'settings', label: 'Settings', icon: 'settings', route: '/admin/settings' }],
+    id: 'settings',
+    label: 'Admin Settings',
+    items: [
+      { id: 'profile', label: 'Admin Profile', icon: 'user', route: '/admin/profile' },
+      { id: 'password', label: 'Change Password', icon: 'key', route: '/admin/change-password' },
+      { id: 'departments', label: 'Department Management', icon: 'building', route: '/admin/departments', adminOnly: true },
+      { id: 'security', label: 'Session & Security', icon: 'shield', route: '/admin/security', adminOnly: true },
+    ],
   },
 ];
 
 /** Groups with only the items `user` may view (empty groups dropped). */
 export const visibleNav = (user: User | null) =>
-  ADMIN_NAV.map((g) => ({ ...g, items: g.items.filter((i) => !i.screen || can(user, i.screen)) })).filter((g) => g.items.length > 0);
+  ADMIN_NAV.map((g) => ({ ...g, items: g.items.filter((i) => (i.adminOnly ? user?.role === 'ADMIN' : !i.screen || can(user, i.screen))) })).filter((g) => g.items.length > 0);
 
 /** Where `/admin` lands: the first permission-gated page the user can view, or null if their role grants nothing. */
 export const firstAdminRoute = (user: User | null) =>

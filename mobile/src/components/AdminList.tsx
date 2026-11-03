@@ -1,11 +1,16 @@
 import { ReactNode, useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import api, { errorMessage, unwrapList } from '../services/api';
 
-export function Header({ title, sub, children }: { title: string; sub?: string; children?: ReactNode }) {
+export function Header({ title, sub, back, children }: { title: string; sub?: string; back?: boolean; children?: ReactNode }) {
   return (
     <View style={styles.header}>
+      {back ? (
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Back" style={styles.back}>
+          <Text style={styles.backText}>‹ Back</Text>
+        </TouchableOpacity>
+      ) : null}
       <Text style={styles.title}>{title}</Text>
       {sub ? <Text style={styles.sub}>{sub}</Text> : null}
       {children}
@@ -87,6 +92,8 @@ export const cardStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   header: { paddingTop: 56, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: '#fff' },
+  back: { alignSelf: 'flex-start', paddingVertical: 4, marginBottom: 6 },
+  backText: { fontSize: 14, fontWeight: '700', color: '#0088ff' },
   title: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
   sub: { fontSize: 12, color: '#64748b', marginTop: 2 },
   pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },

@@ -33,6 +33,8 @@ export interface User {
   phone: string;
   role: 'USER' | 'MANAGER' | 'ADMIN';
   is_active: boolean;
+  /** True while the account still has the temporary password that was emailed. */
+  must_change_password?: boolean;
   profile?: EmployeeProfile;
   /** null for ADMIN (everything) and USER; a MANAGER's per-screen grants otherwise. */
   permissions?: Record<string, string[]> | null;

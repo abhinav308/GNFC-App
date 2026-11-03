@@ -101,6 +101,13 @@ export async function isTracking() {
   return Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
 }
 
+// For optional locations (punch-out): a recent known position at once, else at most `waitMs` for a fresh one.
+export async function getQuickPoint(waitMs = 3000) {
+  const last = await Location.getLastKnownPositionAsync({ maxAge: 120000 }).catch(() => null);
+  if (last) return { latitude: last.coords.latitude, longitude: last.coords.longitude, accuracy: last.coords.accuracy };
+  return Promise.race([getCurrentPoint(), new Promise<null>((resolve) => setTimeout(() => resolve(null), waitMs))]).catch(() => null);
+}
+
 export async function getCurrentPoint() {
   const fg = await Location.getForegroundPermissionsAsync();
   if (!fg.granted) {

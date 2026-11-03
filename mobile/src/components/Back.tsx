@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 export default function Back({ title, sub }: { title: string; sub?: string }) {
   return (
     <View style={styles.row}>
-      <TouchableOpacity style={styles.btn} onPress={() => router.navigate('/profile')} accessibilityLabel="Back">
+      <TouchableOpacity style={styles.btn} onPress={() => (router.canGoBack() ? router.back() : router.navigate('/profile'))} accessibilityLabel="Back">
         <Text style={styles.chev}>‹</Text>
       </TouchableOpacity>
       <View>

@@ -365,7 +365,7 @@ const employees: MasterConfig = {
     },
     { name: 'position', label: 'Position (Level)', type: 'choice', options: (o) => o.choices.level },
     { name: 'reports_to', label: 'Reports To', type: 'select', options: (o, f) => ids(o.employees.filter((e) => e.id !== f.id)) },
-    { name: 'department', label: 'Department' },
+    { name: 'department', label: 'Department', type: 'select', options: (o) => (o.departments ?? []).map((d) => ({ value: d.label, label: d.label })) },
     { name: 'zone', label: 'Zone', type: 'select', options: (o) => ids(o.zones), onChange: () => ({ district: null, taluka: null, village: null }) },
     { name: 'district', label: 'District', type: 'select', options: (o, f) => districtsOf(o, f.zone), onChange: () => ({ taluka: null, village: null }) },
     { name: 'taluka', label: 'Taluka', type: 'select', options: (o, f) => talukasOf(o, f.district), onChange: () => ({ village: null }) },

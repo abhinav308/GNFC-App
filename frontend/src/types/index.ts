@@ -3,6 +3,7 @@ export type Role = 'USER' | 'MANAGER' | 'ADMIN';
 /** Portal screens an access role can grant (mirrors backend accounts/screens.py). */
 export type ScreenKey =
   | 'dashboard'
+  | 'reports'
   | 'attendance.sessions'
   | 'attendance.visits'
   | 'attendance.leaves'
@@ -87,6 +88,7 @@ export interface Options {
   offices: (Opt & { company: number; office_type: string; zone: number | null; district: number | null })[];
   designations: (Opt & { level: string })[];
   wtp_sites: (Opt & { zone: number })[];
+  departments: Opt[];
   access_roles: Opt[];
   employees: Opt[];
   choices: Record<
@@ -217,6 +219,12 @@ export interface AdminSummary {
   today_punch_outs: number;
   completed_sessions: number;
   today_visits: number;
+  present_today: number;
+  on_leave_today: number;
+  absent_today: number;
+  on_field_duty: number;
+  completed_visits_today: number;
+  trend: { date: string; present: number }[];
 }
 
 export interface AdminVisitDetail {

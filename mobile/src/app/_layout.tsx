@@ -15,11 +15,15 @@ function RootNavigator() {
 
   return (
     <Stack>
-      <Stack.Protected guard={user?.role === 'USER'}>
+      <Stack.Protected guard={!!user?.must_change_password}>
+        <Stack.Screen name="set-password" options={{ headerShown: false }} />
+      </Stack.Protected>
+
+      <Stack.Protected guard={user?.role === 'USER' && !user.must_change_password}>
         <Stack.Screen name="(app)" options={{ headerShown: false }} />
       </Stack.Protected>
 
-      <Stack.Protected guard={!!user && user.role !== 'USER'}>
+      <Stack.Protected guard={!!user && user.role !== 'USER' && !user.must_change_password}>
         <Stack.Screen name="(admin)" options={{ headerShown: false }} />
       </Stack.Protected>
 

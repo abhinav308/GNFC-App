@@ -53,6 +53,7 @@ api.interceptors.response.use(
 export function errorMessage(e: unknown): string {
   const res = (e as { response?: { data?: unknown; status?: number } })?.response;
   const d = res?.data;
+  if (res?.status === 404) return 'Not available on this server yet. The backend needs the latest deploy.';
   // A crashed view returns Django's HTML debug/error page — never dump that into the UI.
   if (typeof d === 'string') return d.trimStart().startsWith('<') ? `Server error (HTTP ${res?.status}). Please try again.` : d;
   if (d && typeof d === 'object') {

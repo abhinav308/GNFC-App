@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useState } from 'react';
+import FilterToggle from '../../../components/FilterToggle';
 import Layout from '../../../components/Layout';
 import { useAuth } from '../../../hooks/useAuth';
 import useOptions from '../../../hooks/useOptions';
@@ -93,6 +94,7 @@ export default function MasterPage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const [filtersOpen, setFiltersOpen] = useState(false); // phones only: the panel starts collapsed
   const [criteria, setCriteria] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -375,12 +377,13 @@ export default function MasterPage({
             </div>
 
             {/* Search Criteria */}
-            <form onSubmit={search} className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+            <form onSubmit={search} className="filter-panel p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3" data-open={filtersOpen}>
+              <span className="w-full text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5 text-blue-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                 </svg>
                 Search Criteria
+                <FilterToggle open={filtersOpen} onClick={() => setFiltersOpen((o) => !o)} active={Object.values(criteria).filter(Boolean).length} />
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                 <div>

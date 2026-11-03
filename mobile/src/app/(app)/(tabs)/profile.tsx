@@ -1,16 +1,12 @@
-import { ReactNode, useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
-import { initials } from '../../components/AppHeader';
-import { useAuth } from '../../hooks/useAuth';
-import { useT } from '../../i18n';
-import api, { unwrapList } from '../../services/api';
-import type { LeaveRequest, Session } from '../../types';
+import { ReactNode } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router } from 'expo-router';
+import { initials } from '../../../components/AppHeader';
+import { useOnDuty } from '../../../duty';
+import { useAuth } from '../../../hooks/useAuth';
+import { useT } from '../../../i18n';
 
-type Href = '/history' | '/leave' | '/holidays' | '/notes' | '/route' | '/hr' | '/documents' | '/announcements' | '/password' | '/language' | '/reminder';
-
-const ANNUAL_LEAVE_DAYS = 40; // ponytail: fixed quota, no backend policy yet
-export const ANNOUNCEMENT_COUNT = 3; // matches the static list in announcements.tsx
+type Href = '/history' | '/password' | '/language';
 
 function Tile({ icon, title, sub, href, badge, danger, onPress }: { icon: string; title: string; sub: string; href?: Href; badge?: string; danger?: boolean; onPress?: () => void }) {
   return (
@@ -41,24 +37,23 @@ const Section = ({ title, children, full }: { title: string; children: ReactNode
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { t } = useT();
-  const [history, setHistory] = useState<Session[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const onDuty = useOnDuty();
 
-  useFocusEffect(
-    useCallback(() => {
-      api.get('/attendance/history/').then((r) => setHistory(unwrapList<Session>(r.data))).catch(() => {});
-      api.get('/attendance/leaves/').then((r) => setLeaves(unwrapList<LeaveRequest>(r.data))).catch(() => {});
-    }, []),
-  );
+  const doLogout = () => {
+    logout();
+    router.replace('/login');
+  };
+  // Logging out stops tracking, so warn when a shift is still running.
+  const confirmLogout = () =>
+    onDuty
+      ? Alert.alert(t('onDuty'), t('logoutOnDuty'), [
+          { text: t('cancel'), style: 'cancel' },
+          { text: t('logoutAnyway'), style: 'destructive', onPress: doLogout },
+        ])
+      : doLogout();
 
   const name = user?.full_name || user?.username || '';
   const p = user?.profile;
-  const now = new Date();
-  const monthDays = new Set(
-    history.filter((s) => { const d = new Date(s.punch_in_at); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).map((s) => new Date(s.punch_in_at).toDateString()),
-  ).size;
-  const used = leaves.filter((l) => l.status === 'APPROVED').reduce((n, l) => n + Math.round((+new Date(l.end_date) - +new Date(l.start_date)) / 864e5) + 1, 0);
-  const last = [...history].sort((a, b) => +new Date(b.punch_in_at) - +new Date(a.punch_in_at))[0];
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -74,39 +69,13 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <View style={styles.stats}>
-        {[
-          [t('thisMonth'), String(monthDays), t('daysPresent'), '#059669'],
-          [t('leaveBalance'), String(Math.max(0, ANNUAL_LEAVE_DAYS - used)), t('daysAvailable'), '#d97706'],
-          [t('lastPunch'), last ? new Date(last.punch_in_at).toLocaleDateString() : t('none'), last ? new Date(last.punch_in_at).toLocaleTimeString() : '', '#0f172a'],
-        ].map(([label, val, cap, color]) => (
-          <View key={label} style={styles.stat}>
-            <Text style={styles.statLabel}>{label.toUpperCase()}</Text>
-            <Text style={[styles.statVal, { color }]} numberOfLines={1} adjustsFontSizeToFit>{val}</Text>
-            <Text style={styles.statCap} numberOfLines={1}>{cap}</Text>
-          </View>
-        ))}
-      </View>
-
       <Section title={t('myWork')}>
         <Tile icon="🗓" title={t('viewAttendance')} sub="Calendar & logs" href="/history" />
-        <Tile icon="📝" title={t('requestLeave')} sub="Apply & balance" href="/leave" />
-        <Tile icon="🎉" title={t('holidayList')} sub="Gazetted dates" href="/holidays" />
-        <Tile icon="🗒" title={t('notes')} sub="Personal memos" href="/notes" />
-        <Tile icon="🧭" title={t('myRoute')} sub="GPS trail & map" href="/route" />
-      </Section>
-      <Section title={t('myHr')}>
-        <Tile icon="🪪" title={t('hrProfile')} sub="Official records" href="/hr" />
-        <Tile icon="📁" title={t('myDocuments')} sub="Vault & files" href="/documents" />
-      </Section>
-      <Section title={t('updates')} full>
-        <Tile icon="🔔" title={t('announcements')} sub="Official bulletins & updates" href="/announcements" badge={`${ANNOUNCEMENT_COUNT} NEW`} />
       </Section>
       <Section title={t('account')}>
         <Tile icon="🔑" title={t('password')} sub="Change login key" href="/password" />
         <Tile icon="🌐" title={t('language')} sub="EN / HI / GJ" href="/language" />
-        <Tile icon="⏰" title={t('punchReminder')} sub="Notification alert" href="/reminder" />
-        <Tile danger icon="⎋" title={t('logout')} sub="Exit application" onPress={() => { logout(); router.replace('/login'); }} />
+        <Tile danger icon="⎋" title={t('logout')} sub="Exit application" onPress={confirmLogout} />
       </Section>
     </ScrollView>
   );
@@ -121,11 +90,6 @@ const styles = StyleSheet.create({
   name: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
   role: { fontSize: 13, fontWeight: '700', color: '#059669' },
   meta: { fontSize: 11, color: '#64748b', marginTop: 1 },
-  stats: { flexDirection: 'row', gap: 10, marginBottom: 18 },
-  stat: { flex: 1, backgroundColor: '#fff', borderRadius: 16, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: '#f1f5f9' },
-  statLabel: { fontSize: 9, fontWeight: '800', color: '#94a3b8', letterSpacing: 0.5 },
-  statVal: { fontSize: 20, fontWeight: '800', marginVertical: 4 },
-  statCap: { fontSize: 10, color: '#64748b' },
   sectionTitle: { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 1, marginBottom: 8, paddingHorizontal: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tile: { flexGrow: 1, flexBasis: '47%', backgroundColor: '#fff', borderRadius: 16, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#f1f5f9' },
